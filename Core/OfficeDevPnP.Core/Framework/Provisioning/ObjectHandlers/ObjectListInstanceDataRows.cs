@@ -265,24 +265,7 @@ namespace OfficeDevPnP.Core.Framework.Provisioning.ObjectHandlers
                                                                 case "TaxonomyFieldTypeMulti":
                                                                     // Multi value field - Expected format: term label|term GUID;term label|term GUID;term label|term GUID;...
                                                                     {
-                                                                        if (fieldValue != null)
-                                                                        {
-                                                                            var context = ((ClientContext)web.Context);
-                                                                            TaxonomyFieldValueCollection taxonomyValues = new TaxonomyFieldValueCollection(context, null, dataField);
-                                                                            taxonomyValues.PopulateFromLabelGuidPairs(fieldValue.Trim(new char[] { ';' }));
-
-                                                                            if (dataField.TypeAsString == "TaxonomyFieldType")
-                                                                            {
-                                                                                context.Load(taxonomyValues);
-                                                                                context.ExecuteQueryRetry();
-
-                                                                                updateValues.Add(new FieldUpdateValue(dataValue.Key, taxonomyValues[0], dataField.TypeAsString));
-                                                                            }
-                                                                            else
-                                                                            {
-                                                                                updateValues.Add(new FieldUpdateValue(dataValue.Key, taxonomyValues, dataField.TypeAsString));
-                                                                            }
-                                                                        }
+                                                                        updateValues.Add(new FieldUpdateValue(dataValue.Key, fieldValue, dataField.TypeAsString));
                                                                         break;
                                                                     }
                                                             }
@@ -307,17 +290,11 @@ namespace OfficeDevPnP.Core.Framework.Provisioning.ObjectHandlers
                                                 switch (itemValue.FieldTypeString)
                                                 {
                                                     case "TaxonomyFieldTypeMulti":
-                                                        {
-                                                            var field = fields.FirstOrDefault(f => f.InternalName == itemValue.Key as string || f.Title == itemValue.Key as string);
-                                                            var taxField = web.Context.CastTo<TaxonomyField>(field);
-                                                            taxField.SetFieldValueByValueCollection(listitem, itemValue.Value as TaxonomyFieldValueCollection);
-                                                            break;
-                                                        }
                                                     case "TaxonomyFieldType":
                                                         {
-                                                            var field = fields.FirstOrDefault(f => f.InternalName == itemValue.Key as string || f.Title == itemValue.Key as string);
-                                                            var taxField = web.Context.CastTo<TaxonomyField>(field);
-                                                            taxField.SetFieldValueByValue(listitem, itemValue.Value as TaxonomyFieldValue);
+                                                            var field = fields.FirstOrDefault(f => f.InternalName == itemValue.Key || f.Title == itemValue.Key);
+                                                            TaxonomyField taxonomyField = web.Context.CastTo<TaxonomyField>(field);
+                                                            taxonomyField.SetFieldValueByLabelGuidPair(listitem, itemValue.Value as string);
                                                             break;
                                                         }
                                                 }

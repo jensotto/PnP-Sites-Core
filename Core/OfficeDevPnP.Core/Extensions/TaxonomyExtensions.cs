@@ -30,7 +30,7 @@ namespace Microsoft.SharePoint.Client
         /// The default Taxonomy Guid Label Delimiter
         /// </summary>
         public const string TaxonomyGuidLabelDelimiter = "|";
-
+        
         /// <summary>
         /// Creates a new term group, in the specified term store.
         /// </summary>
@@ -1660,6 +1660,31 @@ namespace Microsoft.SharePoint.Client
             }
         }
 
+        //Code copied from Microsoft.SharePoint.Taxonomy.TaxonomyFieldValue.PopulateFromLabelGuidPair(string text)
+        //This has intentionally not been made as an extension method so that it will not collide if Microsoft exposes this method in the future.
+        //This method exists on the SSOM TaxonomyFieldValue and is already exposed in TaxonomyFieldValueCollection
+        private static void PopulateFromLabelGuidPair(TaxonomyFieldValue fieldValue, string text)
+        {
+            if (text == null)
+            {
+                throw new ArgumentException(CoreResources.TaxonomyExtensions_PopulateFromLabelGuidPair_TextNull, nameof(text));
+            }
+            string[] strArray = text.Split(new char[] { TaxonomyGuidLabelDelimiter[0] });
+            if (strArray.Length >= 2)
+            {
+                fieldValue.Label = strArray[0];
+                fieldValue.TermGuid = strArray[strArray.Length - 1];
+            }
+            else
+            {
+                fieldValue.Label = string.Empty;
+                fieldValue.TermGuid = text;
+            }
+            //WssId needs to be set to -1 as none of the necessary TaxonomyFieldValue constructors are available in CSOM
+            //This will ensure that SharePoint searches for the matching item in the TaxonomyHiddenList or creates a new entry if it is not already there.
+            fieldValue.WssId = -1;
+        }
+
         /// <summary>
         /// Sets a value of a taxonomy field.
         /// Value parameter is one or more label GUID pairs:
@@ -1673,24 +1698,18 @@ namespace Microsoft.SharePoint.Client
         {
             taxonomyField.EnsureProperties(f => f.TextField, f => f.AllowMultipleValues);
 
-            //TaxonomyFieldValue.PopulateFromLabelGuidPairs(string) has not been exposed to CSOM.
-            //This trick uses TaxonomyFieldValueCollection to get the same result for single value taxonomy fields.
-            TaxonomyFieldValueCollection taxonomyValues = new TaxonomyFieldValueCollection(item.Context, null, taxonomyField);
-            taxonomyValues.PopulateFromLabelGuidPairs(value);
-
             if (taxonomyField.AllowMultipleValues)
             {
+                TaxonomyFieldValueCollection taxonomyValues = new TaxonomyFieldValueCollection(item.Context, null, taxonomyField);
+                taxonomyValues.PopulateFromLabelGuidPairs(value);
                 taxonomyField.SetFieldValueByValueCollection(item, taxonomyValues);
             }
             else
             {
-                item.Context.Load(taxonomyValues);
-                item.Context.ExecuteQueryRetry();
-                if (taxonomyValues.Count > 0)
-                {
-                    taxonomyField.SetFieldValueByValue(item, taxonomyValues[0]);
-                }
-                else
+                TaxonomyFieldValue taxValue = new TaxonomyFieldValue();
+                PopulateFromLabelGuidPair(taxValue, value);
+
+                if (taxValue.Label == string.Empty && taxValue.TermGuid == string.Empty)
                 {
                     //Empty single value taxonomy value specified. Clear out existing value.
                     //It's not possible to clear out the value using an empty TaxonomyFieldValue directly.
@@ -1712,6 +1731,10 @@ namespace Microsoft.SharePoint.Client
                     taxonomyField.SetFieldValueByValue(item, taxonomyValue);
 
                     item[hiddenField.InternalName] = string.Empty;
+                }
+                else
+                {
+                    taxonomyField.SetFieldValueByValue(item, taxValue);
                 }
             }
         }

@@ -2440,6 +2440,15 @@ namespace OfficeDevPnP.Core {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Value can not be null..
+        /// </summary>
+        internal static string TaxonomyExtensions_PopulateFromLabelGuidPair_TextNull {
+            get {
+                return ResourceManager.GetString("TaxonomyExtensions_PopulateFromLabelGuidPair_TextNull", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to ClientContext gets closed after action is completed. Calling ExecuteQuery again returns an error. Verify that you have an open ClientContext object. Error = {0}.
         /// </summary>
         internal static string TenantExtensions_ClosedContextWarning {

@@ -1114,4 +1114,7 @@
   <data name="TimerJob_DoWork_NoClientContext" xml:space="preserve">
     <value>Failed to obtain a ClientContext instance: {0}.</value>
   </data>
+  <data name="TaxonomyExtensions_PopulateFromLabelGuidPair_TextNull" xml:space="preserve">
+    <value>Value can not be null.</value>
+  </data>
 </root>
