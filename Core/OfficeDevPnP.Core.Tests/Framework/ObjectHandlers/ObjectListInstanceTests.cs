@@ -7,6 +7,7 @@ using OfficeDevPnP.Core.Framework.Provisioning.Model;
 using OfficeDevPnP.Core.Framework.Provisioning.ObjectHandlers;
 using System.Xml.Linq;
 using Microsoft.SharePoint.Client.Taxonomy;
+using OfficeDevPnP.Core.Entities;
 
 namespace OfficeDevPnP.Core.Tests.Framework.ObjectHandlers
 {
@@ -182,6 +183,139 @@ namespace OfficeDevPnP.Core.Tests.Framework.ObjectHandlers
                 Assert.AreEqual(termName, value[0].Label, "Term label not set correctly");
                 Assert.AreEqual(termId.ToString(), value[0].TermGuid, "Term GUID not set correctly");
 
+            }
+        }
+
+        [TestMethod]
+        public void CanClearTaxonomyFieldData()
+        {
+            var template = new ProvisioningTemplate();
+            var listInstance = new Core.Framework.Provisioning.Model.ListInstance();
+
+            var fieldName = "Test2_" + DateTime.Now.ToFileTime();
+
+            listInstance.Url = string.Format("lists/{0}", listName);
+            listInstance.Title = listName;
+            listInstance.TemplateType = (int)ListTemplateType.GenericList;
+            listInstance.FieldRefs.Add(new FieldRef() { Id = new Guid("23f27201-bee3-471e-b2e7-b64fd8b7ca38") });
+
+            using (var ctx = TestCommon.CreateClientContext())
+            {
+                //Create term
+                var taxSession = TaxonomySession.GetTaxonomySession(ctx);
+                var termStore = taxSession.GetDefaultSiteCollectionTermStore();
+
+                // Termgroup
+                termGroupId = Guid.NewGuid();
+                var termGroup = termStore.CreateGroup("Test_Group_" + DateTime.Now.ToFileTime(), termGroupId);
+                ctx.Load(termGroup);
+
+                var termSet = termGroup.CreateTermSet("Test_Termset_" + DateTime.Now.ToFileTime(), Guid.NewGuid(), 1033);
+                ctx.Load(termSet);
+
+                Guid termId = Guid.NewGuid();
+                string termName = "Test_Term_" + DateTime.Now.ToFileTime();
+
+                termSet.CreateTerm(termName, 1033, termId);
+
+                Dictionary<string, string> dataValues = new Dictionary<string, string>();
+                dataValues.Add("Title", "Test");
+                dataValues.Add("TaxKeyword", $"{termName}|{termId.ToString()}");
+                dataValues.Add(fieldName, $"{termName}|{termId.ToString()}");
+                DataRow dataRow = new DataRow(dataValues);
+
+                listInstance.DataRows.Add(dataRow);
+
+                template.Lists.Add(listInstance);
+
+                var parser = new TokenParser(ctx.Web, template);
+
+                // Create the List
+                parser = new ObjectListInstance().ProvisionObjects(ctx.Web, template, parser, new ProvisioningTemplateApplyingInformation());
+
+                var list = ctx.Web.GetListByUrl(listInstance.Url);
+                Assert.IsNotNull(list);
+
+                // Create taxonomyfield first
+                TaxonomyFieldCreationInformation fieldCI = new TaxonomyFieldCreationInformation()
+                {
+                    Id = fieldId,
+                    DisplayName = fieldName,
+                    InternalName = fieldName,
+                    Group = "Test Fields Group",
+                    TaxonomyItem = termSet
+                };
+                var field = list.CreateTaxonomyField(fieldCI);
+
+                ctx.ExecuteQueryRetry();
+
+                // Load DataRows
+                new ObjectListInstanceDataRows().ProvisionObjects(ctx.Web, template, parser, new ProvisioningTemplateApplyingInformation());
+
+                list = ctx.Web.GetListByUrl(listInstance.Url);
+                Assert.IsNotNull(list);
+
+                var taxonomyField = ctx.CastTo<TaxonomyField>(field);
+                ctx.Load(taxonomyField, t => t.TextField);
+                ctx.ExecuteQueryRetry();
+
+                var hiddenField = list.Fields.GetById(taxonomyField.TextField);
+                ctx.Load(hiddenField,
+                    f => f.InternalName);
+                ctx.ExecuteQueryRetry();
+                var textFieldInternalName = hiddenField.InternalName;
+                var items = list.GetItems(CamlQuery.CreateAllItemsQuery());
+                ctx.Load(items, itms => itms.Include(i => i["Title"], i => i["TaxKeyword"], i => i["TaxCatchAll"], i => i[fieldName], i => i[textFieldInternalName]));
+                ctx.ExecuteQueryRetry();
+
+                Assert.IsTrue(items.Count == 1);
+                Assert.IsTrue(items[0]["Title"].ToString() == "Test");
+
+                Assert.AreEqual(2, (items[0]["TaxCatchAll"] as FieldLookupValue[]).Length, "TaxCatchAll does not have 2 entries");
+
+                //Validate taxonomy field data
+                var value = items[0]["TaxKeyword"] as TaxonomyFieldValueCollection;
+                Assert.IsNotNull(value);
+                Assert.IsTrue(value[0].WssId > 0, "Term WSS ID not set correctly");
+                Assert.AreEqual(termName, value[0].Label, "Term label not set correctly");
+                Assert.AreEqual(termId.ToString(), value[0].TermGuid, "Term GUID not set correctly");
+
+                var taxonomyFieldValue = items[0][fieldName] as TaxonomyFieldValue;
+                var hiddenFieldValue = items[0][textFieldInternalName];
+
+                Assert.IsTrue(taxonomyFieldValue.WssId > 0, "Term WSS ID not set correctly");
+                Assert.AreEqual(termName, taxonomyFieldValue.Label, "Term label not set correctly");
+                Assert.AreEqual(termId.ToString(), taxonomyFieldValue.TermGuid, "Term GUID not set correctly");
+
+                ctx.Load(items[0], i => i[fieldName], i => i["TaxCatchAll"]);
+                ctx.ExecuteQueryRetry();
+
+                Assert.AreEqual(2, (items[0]["TaxCatchAll"] as FieldLookupValue[]).Length, "TaxCatchAll does not have 2 entries");
+
+                //Clearing the single value taxonomy field.
+
+                Dictionary<string, string> dataValues2 = new Dictionary<string, string>();
+                dataValues2.Add("Title", "Test");
+                dataValues2.Add(fieldName, "|");
+                DataRow dataRow2 = new DataRow(dataValues2);
+                
+                listInstance.DataRows.Clear();
+                listInstance.DataRows.Add(dataRow2);
+                listInstance.DataRows.KeyColumn = "Title";
+                listInstance.DataRows.UpdateBehavior = UpdateBehavior.Overwrite;
+
+                new ObjectListInstanceDataRows().ProvisionObjects(ctx.Web, template, parser, new ProvisioningTemplateApplyingInformation());
+
+                var items2 = list.GetItems(CamlQuery.CreateAllItemsQuery());
+                ctx.Load(items2, itms => itms.Include(i => i["Title"], i => i["TaxKeyword"], i => i["TaxCatchAll"], i => i[fieldName], i => i[textFieldInternalName]));
+                ctx.ExecuteQueryRetry();
+
+                var taxonomyFieldValue2 = items2[0][fieldName] as TaxonomyFieldValue;
+                var hiddenFieldValue2 = items2[0][textFieldInternalName];
+
+                Assert.AreEqual(1, (items2[0]["TaxCatchAll"] as FieldLookupValue[]).Length, "TaxCatchAll does not have 1 entry");
+                Assert.IsNull(taxonomyFieldValue2, "taxonomyFieldValue2 is not null");
+                Assert.IsNull(hiddenFieldValue2, "hiddenFieldValue2 is not null");
             }
         }
 
